@@ -1,4 +1,4 @@
-# "Facial Feature Extraction" 
+# Facial Feature Extraction
 
 # Possible Methods
 - OpenCV’s Haar Cascade classifier
