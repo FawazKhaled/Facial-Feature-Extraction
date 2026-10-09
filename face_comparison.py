@@ -80,7 +80,7 @@ def extract_arcface_embedding(
     model: ArcFaceModel,
     image: Image.Image,
 ) -> np.ndarray:
-    """Detect one face and return its normalized 512-D ArcFace feature vector."""
+    # Detect one face and return its normalized 512-D ArcFace feature vector.
     rgb_image = np.asarray(image.convert("RGB"), dtype=np.uint8)
     bgr_image = rgb_image[:, :, ::-1].copy()
     faces = model.get(bgr_image)
@@ -108,7 +108,7 @@ def iter_dataset_embeddings(
     model: ArcFaceModel,
     image_paths: Iterable[Path],
 ) -> Iterator[tuple[Path, np.ndarray]]:
-    """Extract dataset embeddings one image at a time."""
+    # Extract dataset embeddings one image at a time.
     for image_path, image in iter_dataset_images(image_paths):
         yield image_path, extract_arcface_embedding(model, image)
 
@@ -117,7 +117,7 @@ def cosine_similarity(
     first_embedding: np.ndarray,
     second_embedding: np.ndarray,
 ) -> float:
-    """Return the cosine similarity between two 512-D face embeddings."""
+    # Return the cosine similarity between two 512-D face embeddings.
     first = np.asarray(first_embedding, dtype=np.float32).reshape(-1)
     second = np.asarray(second_embedding, dtype=np.float32).reshape(-1)
 
@@ -142,7 +142,7 @@ def iter_dataset_similarities(
     query_embedding: np.ndarray,
     image_paths: Iterable[Path],
 ) -> Iterator[tuple[Path, float]]:
-    """Compare a query embedding with each readable, single-face dataset image."""
+    # Compare a query embedding with each readable, single-face dataset image.
     for image_path in image_paths:
         try:
             with Image.open(image_path) as image:
@@ -159,7 +159,7 @@ def rank_similarities(
     similarities: Iterable[tuple[Path, float]],
     top_k: int | None = None,
 ) -> list[tuple[Path, float]]:
-    """Sort matches from most to least similar, optionally keeping only top_k."""
+    # Sort matches from most to least similar, optionally keeping only top_k.
     if top_k is not None and top_k < 1:
         raise ValueError("top_k must be a positive integer.")
 
