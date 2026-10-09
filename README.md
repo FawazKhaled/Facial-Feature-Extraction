@@ -25,3 +25,16 @@ python .\face_comparison.py "C:\path\to\query.jpg" --dataset .\data --top-k 10
 The script ranks dataset images by cosine similarity between normalized
 512-dimensional ArcFace embeddings. It currently compares floating-point
 embeddings; it does not yet convert them to binary hash codes.
+
+To preview the first indexed CASIA-WebFace image without entering an image
+path, run:
+
+```powershell
+python .\image_input.py
+```
+
+Pass an image path to load a specific image instead:
+
+```powershell
+python .\image_input.py "C:\path\to\image.jpg"
+```
