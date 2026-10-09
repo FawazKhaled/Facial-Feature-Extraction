@@ -58,7 +58,7 @@ def iter_dataset_images(
 
 
 def load_arcface_model() -> ArcFaceModel:
-    # Load InsightFace's pretrained ArcFace model using GPU inference.
+    # Load InsightFace's pretrained ArcFace model using CPU inference.
     try:
         insightface_app = import_module("insightface.app")
     except ImportError as error:
@@ -70,7 +70,7 @@ def load_arcface_model() -> ArcFaceModel:
     face_analysis = getattr(insightface_app, "FaceAnalysis")
     model = face_analysis(
         name="buffalo_l",
-        providers=["CUDAExecutionProvider"],
+        providers=["CPUExecutionProvider"],
     )
     model.prepare(ctx_id=-1)
     return cast(ArcFaceModel, model)
@@ -133,7 +133,8 @@ def cosine_similarity(
     if first_norm == 0 or second_norm == 0:
         raise ValueError("Cosine similarity is undefined for a zero-length embedding.")
 
-    return float(np.dot(first, second) / (first_norm * second_norm))
+    similarity = float(np.dot(first, second) / (first_norm * second_norm))
+    return float(np.clip(similarity, -1.0, 1.0))
 
 
 def iter_dataset_similarities(
@@ -154,6 +155,18 @@ def iter_dataset_similarities(
             logger.warning("Skipping %s: %s", image_path, error)
 
 
+def rank_similarities(
+    similarities: Iterable[tuple[Path, float]],
+    top_k: int | None = None,
+) -> list[tuple[Path, float]]:
+    """Sort matches from most to least similar, optionally keeping only top_k."""
+    if top_k is not None and top_k < 1:
+        raise ValueError("top_k must be a positive integer.")
+
+    ranked = sorted(similarities, key=lambda result: result[1], reverse=True)
+    return ranked if top_k is None else ranked[:top_k]
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(
         description="Compare a query face with dataset images using ArcFace cosine similarity."
@@ -164,9 +177,18 @@ def main() -> None:
         default="data",
         help="Folder containing dataset images (default: data)",
     )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=10,
+        help="Number of highest-similarity matches to display (default: 10)",
+    )
     args = parser.parse_args()
 
     try:
+        if args.top_k < 1:
+            parser.error("--top-k must be at least 1.")
+
         query_image, query_path, dataset_image_paths = load_comparison_inputs(
             args.query_image,
             args.dataset,
@@ -175,18 +197,16 @@ def main() -> None:
         query_embedding = extract_arcface_embedding(model, query_image)
         print(f"Loaded query image: {query_path} ({query_image.size[0]}x{query_image.size[1]})")
         print(f"Found {len(dataset_image_paths)} dataset images in: {Path(args.dataset).resolve()}")
-        print(f"Comparing query face against {len(dataset_image_paths)} dataset images:")
-        compared_count = 0
-        for image_path, similarity in iter_dataset_similarities(
-            model,
-            query_embedding,
-            dataset_image_paths,
-        ):
-            print(f"{similarity:.4f}\t{image_path}")
-            compared_count += 1
-
-        if compared_count == 0:
+        ranked_matches = rank_similarities(
+            iter_dataset_similarities(model, query_embedding, dataset_image_paths),
+            top_k=args.top_k,
+        )
+        if not ranked_matches:
             parser.error("No dataset images could be compared successfully.")
+
+        print(f"Top {len(ranked_matches)} matches (cosine similarity, highest first):")
+        for rank, (image_path, similarity) in enumerate(ranked_matches, start=1):
+            print(f"{rank:>3}. {similarity:.4f}\t{image_path}")
     except (OSError, RuntimeError, ValueError) as error:
         parser.error(str(error))
 

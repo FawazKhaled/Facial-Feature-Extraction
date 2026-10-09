@@ -13,3 +13,15 @@
 # Best Proposed Method
 - VGG16 (32-bit floating-point-numbers)
 - ArcFace-Based Deep Hashing (bits)
+
+# Face comparison prototype
+
+Run the current ArcFace embedding comparison from the project folder:
+
+```powershell
+python .\face_comparison.py "C:\path\to\query.jpg" --dataset .\data --top-k 10
+```
+
+The script ranks dataset images by cosine similarity between normalized
+512-dimensional ArcFace embeddings. It currently compares floating-point
+embeddings; it does not yet convert them to binary hash codes.
