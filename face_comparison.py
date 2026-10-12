@@ -35,7 +35,6 @@ class ArcFaceModel(Protocol):
 
 
 def load_arcface_model() -> ArcFaceModel:
-    # Load InsightFace's pretrained ArcFace model using CPU inference.
     try:
         insightface_app = import_module("insightface.app")
     except ImportError as error:
@@ -54,7 +53,6 @@ def load_arcface_model() -> ArcFaceModel:
 
 
 def extract_arcface_embedding(model: ArcFaceModel, image: Image.Image) -> np.ndarray:
-    # Detect one face and return its normalized 512-D ArcFace feature vector.
     rgb_image = np.asarray(image.convert("RGB"), dtype=np.uint8)
     bgr_image = rgb_image[:, :, ::-1].copy()
     faces = model.get(bgr_image)
@@ -79,27 +77,17 @@ def extract_arcface_embedding(model: ArcFaceModel, image: Image.Image) -> np.nda
 
 
 def cosine_similarity(first_embedding: np.ndarray, second_embedding: np.ndarray) -> float:
-    # Return cosine similarity for two finite, non-zero 512-D embeddings.
     first = np.asarray(first_embedding, dtype=np.float32).reshape(-1)
     second = np.asarray(second_embedding, dtype=np.float32).reshape(-1)
-    if first.size != EMBEDDING_DIMENSION or second.size != EMBEDDING_DIMENSION:
-        raise ValueError(
-            f"Cosine similarity requires two {EMBEDDING_DIMENSION}-D embeddings."
-        )
-    if not np.isfinite(first).all() or not np.isfinite(second).all():
-        raise ValueError("Embeddings must contain only finite values.")
 
     first_norm = np.linalg.norm(first)
     second_norm = np.linalg.norm(second)
-    if first_norm == 0 or second_norm == 0:
-        raise ValueError("Cosine similarity is undefined for a zero-length embedding.")
 
     similarity = float(np.dot(first, second) / (first_norm * second_norm))
     return float(np.clip(similarity, -1.0, 1.0))
 
 
 def find_record_offset(dataset_directory: Path, record_key: int) -> int:
-    # Find the byte offset of a record key in train.idx.
     for key, offset in iter_casia_index(dataset_directory):
         if key == record_key:
             return offset
@@ -107,7 +95,6 @@ def find_record_offset(dataset_directory: Path, record_key: int) -> int:
 
 
 def dataset_signature(dataset_directory: Path) -> str:
-    # Identify the dataset/model pair so stale embeddings are not reused.
     index_stat = (dataset_directory / "train.idx").stat()
     record_stat = (dataset_directory / "train.rec").stat()
     return (
@@ -176,7 +163,6 @@ def cache_embeddings(connection: sqlite3.Connection, signature: str, records: li
 
 
 def rank_casia_records(model: ArcFaceModel, dataset_directory: Path, query_key: int, query_embedding: np.ndarray, connection: sqlite3.Connection, signature: str, top_k: int, limit: int | None = None) -> list[tuple[int, float, float]]:
-    # Stream CASIA records and retain only the highest-scoring top-k matches.
     matches: list[tuple[float, int, float]] = []
     pending_embeddings: list[tuple[int, float, np.ndarray]] = []
     candidate_count = 0
@@ -227,7 +213,6 @@ def rank_casia_records(model: ArcFaceModel, dataset_directory: Path, query_key: 
 
 
 def run_comparison(dataset_directory: Path, query_key: int, top_k: int, cache_path: Path, limit: int | None = None) -> list[tuple[int, float, float]]:
-    # Load the query, create/reuse embeddings, and rank the dataset.
     dataset_directory = dataset_directory.expanduser().resolve()
     if not dataset_directory.is_dir():
         raise NotADirectoryError(f"CASIA-WebFace folder not found: {dataset_directory}")

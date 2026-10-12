@@ -3,7 +3,6 @@ import argparse
 
 
 def list_files(root_dir, extensions=None, recursive=True):
-    # Return a list of files under root_dir, optionally filtered by extension.
     root = Path(root_dir)
     if not root.exists():
         raise FileNotFoundError(f"Folder not found: {root}")

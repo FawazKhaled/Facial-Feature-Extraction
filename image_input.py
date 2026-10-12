@@ -15,7 +15,7 @@ RECORDIO_FRAMING_FORMAT = "<II"
 RECORDIO_FRAMING_SIZE = struct.calcsize(RECORDIO_FRAMING_FORMAT)
 
 
-def load_image(image_path: str):
+def load_image(image_path):
     path = Path(image_path).expanduser().resolve()
     if not path.exists():
         raise FileNotFoundError(f"Image not found: {path}")
@@ -25,7 +25,7 @@ def load_image(image_path: str):
     return image, path
 
 
-def iter_casia_index(dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY) -> Iterator[tuple[int, int]]:
+def iter_casia_index(dataset_directory):
     dataset_path = Path(dataset_directory).expanduser().resolve()
     index_path = dataset_path / "train.idx"
 
@@ -52,7 +52,7 @@ def iter_casia_index(dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY) ->
                 ) from error
 
 
-def load_casia_record(dataset_directory: str | Path, record_key: int, record_offset: int) -> tuple[Image.Image, float]:
+def load_casia_record(dataset_directory, record_key, record_offset):
     dataset_path = Path(dataset_directory).expanduser().resolve()
     record_path = dataset_path / "train.rec"
     if not record_path.is_file():
@@ -60,7 +60,6 @@ def load_casia_record(dataset_directory: str | Path, record_key: int, record_off
 
     with record_path.open("rb") as record_file:
         record_file.seek(record_offset)
-        # Each indexed record starts with the RecordIO magic value and payload size.
         framing = record_file.read(RECORDIO_FRAMING_SIZE)
         if len(framing) != RECORDIO_FRAMING_SIZE:
             raise ValueError(f"RecordIO header is incomplete at offset {record_offset}.")
@@ -99,7 +98,7 @@ def load_casia_record(dataset_directory: str | Path, record_key: int, record_off
     return image, float(label)
 
 
-def load_first_casia_image(dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY) -> tuple[Image.Image, int, float]:
+def load_first_casia_image(dataset_directory):
     first_record = next(iter_casia_index(dataset_directory), None)
     if first_record is None:
         raise ValueError(
