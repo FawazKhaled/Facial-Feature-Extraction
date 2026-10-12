@@ -1,5 +1,6 @@
 from pathlib import Path
 from io import BytesIO
+from collections.abc import Iterator
 import struct
 import argparse
 
@@ -10,6 +11,8 @@ DEFAULT_CASIA_DIRECTORY = Path(__file__).resolve().parent / "data" / "casia-webf
 RECORDIO_MAGIC = 0xCED7230A
 RECORDIO_HEADER_FORMAT = "<IfQQ"
 RECORDIO_HEADER_SIZE = struct.calcsize(RECORDIO_HEADER_FORMAT)
+RECORDIO_FRAMING_FORMAT = "<II"
+RECORDIO_FRAMING_SIZE = struct.calcsize(RECORDIO_FRAMING_FORMAT)
 
 
 def load_image(image_path: str):
@@ -22,43 +25,54 @@ def load_image(image_path: str):
     return image, path
 
 
-def load_first_casia_image(
+def iter_casia_index(
     dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY,
-) -> tuple[Image.Image, int, float]:
-    """Load the first indexed face image from a CASIA-WebFace RecordIO dataset."""
+) -> Iterator[tuple[int, int]]:
+    """Yield each CASIA RecordIO key and its byte offset."""
     dataset_path = Path(dataset_directory).expanduser().resolve()
     index_path = dataset_path / "train.idx"
-    record_path = dataset_path / "train.rec"
 
     if not dataset_path.is_dir():
         raise FileNotFoundError(f"CASIA-WebFace folder not found: {dataset_path}")
-    if not index_path.is_file() or not record_path.is_file():
-        raise FileNotFoundError(
-            f"Expected train.idx and train.rec in CASIA-WebFace folder: {dataset_path}"
-        )
+    if not index_path.is_file():
+        raise FileNotFoundError(f"CASIA-WebFace index not found: {index_path}")
 
     with index_path.open("r", encoding="ascii") as index_file:
-        first_entry = next((line.strip() for line in index_file if line.strip()), None)
-    if first_entry is None:
-        raise ValueError(f"CASIA-WebFace index is empty: {index_path}")
+        for line_number, line in enumerate(index_file, start=1):
+            entry = line.strip()
+            if not entry:
+                continue
+            fields = entry.split("\t")
+            if len(fields) != 2:
+                raise ValueError(
+                    f"Invalid RecordIO index entry at {index_path}:{line_number}: {entry!r}"
+                )
+            try:
+                yield int(fields[0]), int(fields[1])
+            except ValueError as error:
+                raise ValueError(
+                    f"Invalid RecordIO key or offset at {index_path}:{line_number}: {entry!r}"
+                ) from error
 
-    index_fields = first_entry.split("\t")
-    if len(index_fields) != 2:
-        raise ValueError(f"Invalid RecordIO index entry in {index_path}: {first_entry!r}")
-    try:
-        record_key, record_offset = map(int, index_fields)
-    except ValueError as error:
-        raise ValueError(
-            f"Invalid RecordIO key or offset in {index_path}: {first_entry!r}"
-        ) from error
+
+def load_casia_record(
+    dataset_directory: str | Path,
+    record_key: int,
+    record_offset: int,
+) -> tuple[Image.Image, float]:
+    """Load one indexed face image and identity label from CASIA RecordIO."""
+    dataset_path = Path(dataset_directory).expanduser().resolve()
+    record_path = dataset_path / "train.rec"
+    if not record_path.is_file():
+        raise FileNotFoundError(f"CASIA-WebFace records not found: {record_path}")
 
     with record_path.open("rb") as record_file:
         record_file.seek(record_offset)
-        framing = record_file.read(8)
-        if len(framing) != 8:
+        framing = record_file.read(RECORDIO_FRAMING_SIZE)
+        if len(framing) != RECORDIO_FRAMING_SIZE:
             raise ValueError(f"RecordIO header is incomplete at offset {record_offset}.")
 
-        magic, payload_length = struct.unpack("<II", framing)
+        magic, payload_length = struct.unpack(RECORDIO_FRAMING_FORMAT, framing)
         if magic != RECORDIO_MAGIC:
             raise ValueError(
                 f"Invalid RecordIO signature at offset {record_offset}: 0x{magic:08x}."
@@ -85,10 +99,25 @@ def load_first_casia_image(
             image = source.convert("RGB")
     except OSError as error:
         raise ValueError(
-            f"Could not decode the first image in CASIA-WebFace: {error}"
+            f"Could not decode CASIA record {record_key}: {error}"
         ) from error
 
-    return image, record_key, float(label)
+    return image, float(label)
+
+
+def load_first_casia_image(
+    dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY,
+) -> tuple[Image.Image, int, float]:
+    """Load the first indexed face image from a CASIA-WebFace RecordIO dataset."""
+    first_record = next(iter_casia_index(dataset_directory), None)
+    if first_record is None:
+        raise ValueError(
+            f"CASIA-WebFace index is empty: "
+            f"{Path(dataset_directory).expanduser().resolve() / 'train.idx'}"
+        )
+    record_key, record_offset = first_record
+    image, label = load_casia_record(dataset_directory, record_key, record_offset)
+    return image, record_key, label
 
 
 def preprocess_image(image, target_size=(224, 224), output_path=None):
