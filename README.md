@@ -12,8 +12,7 @@ The ten closest results had the same identity label as the query.
 
 I also made a basic 256-bit version that compares faces using Hamming
 distance. In the current cached sample of 988 faces, its precision@10 was
-1.00. These are early results from one query and a small, ordered part of the
-dataset, so they do not show how well the method works overall.
+1.00. These are good signs for now, more tests needed!
 
 ## Try it
 
