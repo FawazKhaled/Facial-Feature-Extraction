@@ -25,10 +25,7 @@ def load_image(image_path: str):
     return image, path
 
 
-def iter_casia_index(
-    dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY,
-) -> Iterator[tuple[int, int]]:
-    """Yield each CASIA RecordIO key and its byte offset."""
+def iter_casia_index(dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY) -> Iterator[tuple[int, int]]:
     dataset_path = Path(dataset_directory).expanduser().resolve()
     index_path = dataset_path / "train.idx"
 
@@ -55,12 +52,7 @@ def iter_casia_index(
                 ) from error
 
 
-def load_casia_record(
-    dataset_directory: str | Path,
-    record_key: int,
-    record_offset: int,
-) -> tuple[Image.Image, float]:
-    """Load one indexed face image and identity label from CASIA RecordIO."""
+def load_casia_record(dataset_directory: str | Path, record_key: int, record_offset: int) -> tuple[Image.Image, float]:
     dataset_path = Path(dataset_directory).expanduser().resolve()
     record_path = dataset_path / "train.rec"
     if not record_path.is_file():
@@ -68,6 +60,7 @@ def load_casia_record(
 
     with record_path.open("rb") as record_file:
         record_file.seek(record_offset)
+        # Each indexed record starts with the RecordIO magic value and payload size.
         framing = record_file.read(RECORDIO_FRAMING_SIZE)
         if len(framing) != RECORDIO_FRAMING_SIZE:
             raise ValueError(f"RecordIO header is incomplete at offset {record_offset}.")
@@ -84,6 +77,7 @@ def load_casia_record(
     if len(payload) != payload_length:
         raise ValueError(f"RecordIO record at offset {record_offset} is truncated.")
 
+    # The header carries the identity label and key; the remaining bytes are JPEG data.
     _, label, embedded_key, _ = struct.unpack(
         RECORDIO_HEADER_FORMAT,
         payload[:RECORDIO_HEADER_SIZE],
@@ -105,10 +99,7 @@ def load_casia_record(
     return image, float(label)
 
 
-def load_first_casia_image(
-    dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY,
-) -> tuple[Image.Image, int, float]:
-    """Load the first indexed face image from a CASIA-WebFace RecordIO dataset."""
+def load_first_casia_image(dataset_directory: str | Path = DEFAULT_CASIA_DIRECTORY) -> tuple[Image.Image, int, float]:
     first_record = next(iter_casia_index(dataset_directory), None)
     if first_record is None:
         raise ValueError(
