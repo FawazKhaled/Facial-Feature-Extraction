@@ -1,40 +1,70 @@
 # Face search with ArcFace and hashing
 
-I’m working on a face search project. The idea is to turn each face into a
-list of numbers, then make that list shorter so faces can be compared with
-compact codes.
+This project searches CASIA-WebFace for faces similar to a selected dataset
+record. It uses ArcFace to make face embeddings, then can compare them either
+with cosine similarity or with a basic binary-hashing version.
 
-## What works so far
+## Setup
 
-The project can read the CASIA-WebFace dataset and compare faces using
-ArcFace. For a first test, I searched for record 1 in the first 1,000 records.
-The ten closest results had the same identity label as the query.
+Install Python, then install the packages used by the scripts:
 
-I also made a basic 256-bit version that compares faces using Hamming
-distance. In the current cached sample of 988 faces, its precision@10 was
-1.00. These are good signs for now, more tests needed!
+```powershell
+python -m pip install numpy pillow insightface onnxruntime
+```
 
-## Try it
+Put the CASIA-WebFace RecordIO files in `data\casia-webface`. The folder
+should contain at least:
 
-Run the face comparison:
+```text
+data/
+  casia-webface/
+    train.idx
+    train.rec
+```
+
+The dataset files are not included in this repository. By default, the scripts
+look for them in that location. Use `--dataset` if your files are somewhere
+else.
+
+## Search with ArcFace
+
+Start with a small run to check that the dataset and model work:
 
 ```powershell
 python .\face_comparison.py --query-key 1 --top-k 10 --limit 1000
 ```
 
-Try the 256-bit baseline on the embeddings already saved:
+This compares record `1` with up to 1,000 other records and prints the closest
+matches. Remove `--limit 1000` to search the full dataset; that can take a long
+time the first time it runs.
+
+The script saves embeddings in `data\arcface_embeddings.sqlite3` by default,
+so later searches can reuse already processed records. Choose a different
+record with `--query-key`, or change how many matches are printed with
+`--top-k`. Run `python .\face_comparison.py --help` to see all options.
+
+## Try binary hashing
+
+Run ArcFace search first so there are embeddings in the cache. Then build and
+search 256-bit codes:
 
 ```powershell
 python .\binary_hashing.py --query-key 1 --bits 256 --top-k 10
 ```
 
-The first command can take a while because it needs to process the images.
-It saves finished embeddings so they can be reused. The dataset and cache are
-kept out of Git.
+This version uses a fixed random projection as a simple baseline. The output
+includes precision@k and average precision for the selected query. Try a
+different code length with `--bits`, or set a repeatable projection with
+`--seed`. Run `python .\binary_hashing.py --help` for the other options.
 
-## What I plan to do next
+## Load or resize an image
 
-The 256-bit codes are currently made with a fixed random projection. The next
-step is to train the hashing part so it learns to keep images of the same
-person close together. After that, I’ll test it with more identities and
-compare it with the current results.
+`image_input.py` can load a regular image and optionally save a resized copy:
+
+```powershell
+python .\image_input.py .\my-image.jpg --resize 224 224 --output .\resized.jpg
+```
+
+Without an image path, it loads the first CASIA-WebFace record instead. This
+utility currently prepares images only; searches use a CASIA record key as
+their query.
