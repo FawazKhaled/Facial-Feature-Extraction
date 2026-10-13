@@ -1,8 +1,8 @@
 # Face search with ArcFace and hashing
 
 This project searches CASIA-WebFace for faces similar to a selected dataset
-record. It uses ArcFace to make face embeddings, then can compare them either
-with cosine similarity or with a basic binary-hashing version.
+record. ArcFace turns each face into an embedding, which the search can compare
+directly or convert into a basic binary code.
 
 ## Setup
 
@@ -68,3 +68,23 @@ python .\image_input.py .\my-image.jpg --resize 224 224 --output .\resized.jpg
 Without an image path, it loads the first CASIA-WebFace record instead. This
 utility currently prepares images only; searches use a CASIA record key as
 their query.
+
+## What works now
+
+The current workflow reads faces from CASIA-WebFace, gets ArcFace embeddings,
+and saves them in a local SQLite cache. It can search for similar records with
+cosine similarity. It can also make 256-bit codes with a fixed random
+projection and compare those codes using Hamming distance.
+
+The random projection is only a baseline. There is no trained hashing CNN or
+webcam search yet. `image_input.py` can load a regular image, but the search
+commands currently use a CASIA record key as the query.
+
+## What still needs to be built
+
+The next step is to train a hashing model using the cached embeddings and
+identity labels, then compare its results with the random-projection baseline.
+After that, a live face search would need to capture webcam frames, detect
+faces, create embeddings and hash codes, and compare them with codes saved for
+registered people. It should also be able to show "unknown" when a match is
+not reliable. Those enrollment and webcam features are not in the project yet.
