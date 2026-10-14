@@ -29,19 +29,21 @@ def main():
     parser.add_argument("--bits", type=int, default=DEFAULT_BITS, help="Binary code length in bits (default: 256)")
     parser.add_argument("--seed", type=int, default=DEFAULT_SEED, help="Deterministic projection seed (default: 42)")
     parser.add_argument("--top-k", type=int, default=10, help="Number of closest Hamming matches to display (default: 10)")
+    parser.add_argument("--bits-cache", type=Path, help="Optional cache for storing binary codes (default: same as --cache)")
     args = parser.parse_args()
 
     dataset_directory = args.dataset.expanduser().resolve()
     cache_path = args.cache or dataset_directory.parent / "arcface_embeddings.sqlite3"
+    bits_cache_path = args.bits_cache or cache_path
     try:
         signature = dataset_signature(dataset_directory)
         records = load_embeddings(cache_path, signature)
-        codes = storing_binary(cache_path, signature, records, bit_length=args.bits, seed=args.seed)
+        codes = storing_binary(bits_cache_path, signature, records, bit_length=args.bits, seed=args.seed)
         matches, precision_at_k, average_precision = rank_hamming(codes, query_key=args.query_key, top_k=args.top_k)
     except (OSError, ValueError, sqlite3.Error) as error:
         parser.error(str(error))
 
-    print(f"Stored {len(codes)} codes of {args.bits} bits ({args.bits // 8} bytes each) in {cache_path}")
+    print(f"Stored {len(codes)} codes of {args.bits} bits ({args.bits // 8} bytes each) in {bits_cache_path}")
     print(f"Random-projection baseline for query {args.query_key}: precision@{min(args.top_k, len(codes) - 1)}= {precision_at_k:.4f}, AP={average_precision:.4f}")
     print("Rank  Record key  Identity  Hamming distance")
     for rank, (record_key, identity_label, distance) in enumerate(matches, start=1):
