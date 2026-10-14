@@ -9,7 +9,7 @@ directly or convert into a basic binary code.
 Install Python, then install the packages used by the scripts:
 
 ```powershell
-python -m pip install numpy pillow insightface onnxruntime
+python -m pip install numpy pillow insightface onnxruntime torch
 ```
 
 Put the CASIA-WebFace RecordIO files in `data\casia-webface`. The folder
@@ -57,6 +57,33 @@ includes precision@k and average precision for the selected query. Try a
 different code length with `--bits`, or set a repeatable projection with
 `--seed`. Run `python .\binary_hashing.py --help` for the other options.
 
+## Train the learned hashing model
+
+First, run `face_comparison.py` to cache embeddings for the records you want to
+use. Then train and evaluate the hashing model:
+
+```powershell
+python .\hashing_cnn.py --epochs 30 --bits 256
+```
+
+The script splits the cached images within each identity into training and
+evaluation sets. It reports retrieval precision@10 and average precision on
+the evaluation set, saves the model to `data\hashing_model.pt`, and stores the
+packed binary codes in `data\binary_codes.sqlite3`. The floating-point
+embeddings remain in the ArcFace cache because they are the model's training
+input.
+
+To compare the learned codes with the random-projection baseline on the same
+held-out images, run:
+
+```powershell
+python .\compare_hashing.py
+```
+
+Use the same `--eval-ratio` and `--split-seed` values that were used when
+training. The script reports precision@10 and average precision for both
+methods.
+
 ## Load or resize an image
 
 `image_input.py` can load a regular image and optionally save a resized copy:
@@ -76,15 +103,16 @@ and saves them in a local SQLite cache. It can search for similar records with
 cosine similarity. It can also make 256-bit codes with a fixed random
 projection and compare those codes using Hamming distance.
 
-The random projection is only a baseline. There is no trained hashing CNN or
-webcam search yet. `image_input.py` can load a regular image, but the search
-commands currently use a CASIA record key as the query.
+The random projection is a baseline. A separate learned hashing model can now
+be trained and its codes saved, but it is not yet connected to the search
+commands. `image_input.py` can load a regular image, but the search commands
+currently use a CASIA record key as the query.
 
 ## What still needs to be built
 
-The next step is to train a hashing model using the cached embeddings and
-identity labels, then compare its results with the random-projection baseline.
-After that, a live face search would need to capture webcam frames, detect
-faces, create embeddings and hash codes, and compare them with codes saved for
-registered people. It should also be able to show "unknown" when a match is
-not reliable. Those enrollment and webcam features are not in the project yet.
+The trained model still needs to be compared with the random-projection
+baseline across the same evaluation queries. After that, a live face search
+would need to capture webcam frames, detect faces, create embeddings and hash
+codes, and compare them with codes saved for registered people. It should also
+be able to show "unknown" when a match is not reliable. Those enrollment and
+webcam features are not in the project yet.

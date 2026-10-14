@@ -129,3 +129,31 @@ def store_binary_codes(cache_path, signature, codes, bit_length, seed):
             ],
         )
         connection.commit()
+
+
+def store_learned_codes(cache_path, signature, codes, bit_length):
+    connection = sqlite3.connect(cache_path)
+    try:
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS learned_codes (
+                dataset_signature TEXT NOT NULL,
+                bit_length INTEGER NOT NULL,
+                record_key INTEGER NOT NULL,
+                identity_label REAL NOT NULL,
+                code BLOB NOT NULL,
+                PRIMARY KEY (dataset_signature, bit_length, record_key)
+            )
+            """
+        )
+        connection.executemany(
+            """
+            INSERT OR REPLACE INTO learned_codes
+                (dataset_signature, bit_length, record_key, identity_label, code)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            [(signature, bit_length, record_key, label, code) for record_key, label, code in codes],
+        )
+        connection.commit()
+    finally:
+        connection.close()
