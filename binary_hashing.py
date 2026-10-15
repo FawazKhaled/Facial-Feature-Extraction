@@ -2,9 +2,9 @@ import argparse
 from pathlib import Path
 import sqlite3
 
-from caching import dataset_signature, load_embeddings, store_binary_codes
-from dataset_reader import DEFAULT_CASIA_DIRECTORY
-from hashing import create_matrix, encode_embedding, ham_dis, rank_hamming
+from lib.caching import dataset_signature, load_embeddings, store_binary_codes
+from lib.dataset_reader import DEFAULT_CASIA_DIRECTORY
+from lib.hashing import create_matrix, encode_embedding, ham_dis, rank_hamming
 
 
 DEFAULT_BITS = 256

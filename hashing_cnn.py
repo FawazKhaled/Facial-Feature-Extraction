@@ -1,10 +1,12 @@
 import numpy as np
 import argparse
+import json
 from pathlib import Path
+import random
 import sqlite3
 
-from caching import dataset_signature, load_embeddings, store_learned_codes
-from dataset_reader import DEFAULT_CASIA_DIRECTORY
+from lib.caching import dataset_signature, load_embeddings, store_learned_codes
+from lib.dataset_reader import DEFAULT_CASIA_DIRECTORY
 import torch
 
 
@@ -15,9 +17,9 @@ def build_hashing_model(dim=512, bit_length=256):
 
 
 # this is for getting the images we want to use for training and evaluation
-def split_cached_embeddings(cache_path, signature, eval_ratio=0.2, seed=42):
-    if not 0 < eval_ratio < 1:
-        raise ValueError("eval_ratio must be between 0 and 1.")
+def split_cached_embeddings(cache_path, signature, validation_ratio=0.2, test_ratio=0.2, seed=42):
+    if validation_ratio <= 0 or test_ratio <= 0 or validation_ratio + test_ratio >= 1:
+        raise ValueError("validation_ratio and test_ratio must be positive and add up to less than 1.")
 
     records = load_embeddings(cache_path, signature)
     if not records:
@@ -27,31 +29,46 @@ def split_cached_embeddings(cache_path, signature, eval_ratio=0.2, seed=42):
     labels = np.asarray([label for _, label, _ in records])
     rng = np.random.default_rng(seed)
     train_indexes = []
-    eval_indexes = []
+    validation_indexes = []
+    test_indexes = []
 
     for identity in np.unique(labels):
         identity_indexes = np.flatnonzero(labels == identity)
         rng.shuffle(identity_indexes)
-        if len(identity_indexes) == 1:
+        sample_count = len(identity_indexes)
+        if sample_count == 1:
             train_indexes.extend(identity_indexes)
             continue
 
-        eval_count = min(max(round(len(identity_indexes) * eval_ratio), 1), len(identity_indexes) - 1)
-        eval_indexes.extend(identity_indexes[:eval_count])
-        train_indexes.extend(identity_indexes[eval_count:])
+        validation_count = max(round(sample_count * validation_ratio), 1)
+        test_count = max(round(sample_count * test_ratio), 1) if sample_count >= 3 else 0
+        while validation_count + test_count >= sample_count:
+            if validation_count >= test_count and validation_count > 1:
+                validation_count -= 1
+            elif test_count > 1:
+                test_count -= 1
+            else:
+                test_count = 0
+                break
+
+        validation_indexes.extend(identity_indexes[:validation_count])
+        test_indexes.extend(identity_indexes[validation_count:validation_count + test_count])
+        train_indexes.extend(identity_indexes[validation_count + test_count:])
 
     rng.shuffle(train_indexes)
-    rng.shuffle(eval_indexes)
-    return embeddings[train_indexes], labels[train_indexes], embeddings[eval_indexes], labels[eval_indexes]
+    rng.shuffle(validation_indexes)
+    rng.shuffle(test_indexes)
+    return (embeddings[train_indexes], labels[train_indexes], embeddings[validation_indexes], labels[validation_indexes],
+            embeddings[test_indexes], labels[test_indexes])
 
 
-def train_hashing_model(model, embeddings, labels, epochs=30, batch_size=128, learning_rate=0.001, device=None):
+def train_hashing_model(model, embeddings, labels, epochs=30, batch_size=128, learning_rate=0.001, device=None, seed=42):
     import torch
     import torch.nn.functional as functional
     from torch.utils.data import DataLoader, TensorDataset
 
     train_data = TensorDataset(torch.as_tensor(embeddings, dtype=torch.float32), torch.as_tensor(labels, dtype=torch.float32))
-    batches = DataLoader(train_data, batch_size=batch_size, shuffle=True)
+    batches = DataLoader(train_data, batch_size=batch_size, shuffle=True, generator=torch.Generator().manual_seed(seed))
     device = torch.device(device or ("cuda" if torch.cuda.is_available() else "cpu"))
     model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -155,46 +172,84 @@ def evaluate_binary_codes(codes, labels, top_k=10):
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Train and evaluate a learned binary hashing model.")
+    parser = argparse.ArgumentParser(description="Train multiple hashing models with randomized seeds and epoch counts.")
     parser.add_argument("--dataset", type=Path, default=DEFAULT_CASIA_DIRECTORY, help="CASIA-WebFace folder used to identify the embedding cache")
     parser.add_argument("--cache", type=Path, help="ArcFace embedding cache (default: data/arcface_embeddings.sqlite3)")
     parser.add_argument("--bits-cache", type=Path, help="Database for learned binary codes (default: data/binary_codes.sqlite3)")
     parser.add_argument("--model", type=Path, help="Where to save the trained model (default: data/hashing_model.pt)")
+    parser.add_argument("--trials-dir", type=Path, help="Where to save trial models and results (default: data/hashing_trials)")
+    parser.add_argument("--trials", type=int, default=10, help="Number of randomized training trials")
     parser.add_argument("--bits", type=int, default=256, help="Number of bits in each code")
-    parser.add_argument("--epochs", type=int, default=30, help="Number of training epochs")
+    parser.add_argument("--epochs", type=int, help="Use this fixed epoch count for every trial instead of randomizing it")
+    parser.add_argument("--min-epochs", type=int, default=10, help="Minimum randomized epoch count")
+    parser.add_argument("--max-epochs", type=int, default=50, help="Maximum randomized epoch count")
     parser.add_argument("--batch-size", type=int, default=128, help="Training batch size")
-    parser.add_argument("--eval-ratio", type=float, default=0.2, help="Fraction of each identity held out for evaluation")
-    parser.add_argument("--seed", type=int, default=42, help="Seed used to make the training and evaluation split")
+    parser.add_argument("--validation-ratio", type=float, default=0.2, help="Fraction of each identity held out for validation")
+    parser.add_argument("--test-ratio", type=float, default=0.2, help="Fraction of each identity held out for final testing")
+    parser.add_argument("--split-seed", "--seed", dest="split_seed", type=int, default=42, help="Fixed seed used for the shared training/validation/test split")
+    parser.add_argument("--search-seed", type=int, default=42, help="Seed controlling randomized trial settings")
     parser.add_argument("--device", help="PyTorch device, such as cpu or cuda")
     args = parser.parse_args()
+    if args.epochs is not None:
+        args.min_epochs = args.epochs
+        args.max_epochs = args.epochs
 
     dataset_directory = args.dataset.expanduser().resolve()
     cache_path = args.cache or dataset_directory.parent / "arcface_embeddings.sqlite3"
     bits_cache_path = args.bits_cache or dataset_directory.parent / "binary_codes.sqlite3"
     model_path = args.model or dataset_directory.parent / "hashing_model.pt"
+    trials_dir = args.trials_dir or dataset_directory.parent / "hashing_trials"
     device = torch.device(args.device or ("cuda" if torch.cuda.is_available() else "cpu"))
 
     try:
-        if args.bits < 1 or args.epochs < 1 or args.batch_size < 2:
-            raise ValueError("bits and epochs must be positive, and batch-size must be at least 2.")
+        if args.trials < 1 or args.bits < 1 or args.min_epochs < 1 or args.max_epochs < args.min_epochs or args.batch_size < 2:
+            raise ValueError("trials and bits must be positive, epoch range must be valid, and batch-size must be at least 2.")
+        if args.validation_ratio <= 0 or args.test_ratio <= 0 or args.validation_ratio + args.test_ratio >= 1:
+            raise ValueError("validation-ratio and test-ratio must be positive and add up to less than 1.")
         signature = dataset_signature(dataset_directory)
-        train_embeddings, train_labels, eval_embeddings, eval_labels = split_cached_embeddings(cache_path, signature, args.eval_ratio, args.seed)
-        model = build_hashing_model(train_embeddings.shape[1], args.bits)
-        model, history = train_hashing_model(model, train_embeddings, train_labels, epochs=args.epochs, batch_size=args.batch_size, device=device)
-        precision_at_k, average_precision, evaluated_queries = evaluate_hashing_model(model, eval_embeddings, eval_labels, device=device)
+        train_embeddings, train_labels, validation_embeddings, validation_labels, _, _ = split_cached_embeddings(cache_path, signature, args.validation_ratio, args.test_ratio, args.split_seed)
+        trials_dir.mkdir(parents=True, exist_ok=True)
+        setting_rng = random.Random(args.search_seed)
+        trial_results = []
+
+        for trial_number in range(1, args.trials + 1):
+            model_seed = setting_rng.randrange(0, 2**31)
+            epochs = setting_rng.randint(args.min_epochs, args.max_epochs)
+            torch.manual_seed(model_seed)
+            if torch.cuda.is_available():
+                torch.cuda.manual_seed_all(model_seed)
+            model = build_hashing_model(train_embeddings.shape[1], args.bits)
+            model, _ = train_hashing_model(model, train_embeddings, train_labels, epochs=epochs, batch_size=args.batch_size, device=device, seed=model_seed)
+            precision, average_precision, evaluated_queries = evaluate_hashing_model(model, validation_embeddings, validation_labels, device=device)
+            trial_model_path = trials_dir / f"trial_{trial_number:03d}_seed_{model_seed}.pt"
+            save_hashing_model(model, trial_model_path)
+            trial_results.append({"trial": trial_number, "model_seed": model_seed, "epochs": epochs, "validation_precision_at_10": precision,
+                                  "validation_average_precision": average_precision, "validation_queries": evaluated_queries,
+                                  "model_path": str(trial_model_path.resolve())})
+            print(f"Trial {trial_number}/{args.trials}: seed={model_seed}, epochs={epochs}, validation precision@10={precision:.4f}, AP={average_precision:.4f}.")
+
+        trial_results.sort(key=lambda trial: (trial["validation_precision_at_10"], trial["validation_average_precision"]), reverse=True)
+        best_model = load_hashing_model(trial_results[0]["model_path"], device)
+        save_hashing_model(best_model, model_path)
         records = load_embeddings(cache_path, signature)
         all_embeddings = np.stack([embedding for _, _, embedding in records])
-        all_codes = encode_hash(model, all_embeddings, device=device)
+        all_codes = encode_hash(best_model, all_embeddings, device=device)
         stored_codes = [(record_key, label, code) for (record_key, label, _), code in zip(records, all_codes)]
         store_learned_codes(bits_cache_path, signature, stored_codes, args.bits)
-        save_hashing_model(model, model_path)
+        manifest_path = trials_dir / "trials.json"
+        manifest = {"dataset_signature": signature, "bits": args.bits, "validation_ratio": args.validation_ratio,
+                    "test_ratio": args.test_ratio, "split_seed": args.split_seed, "search_seed": args.search_seed,
+                    "batch_size": args.batch_size, "trials": trial_results}
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
     except (OSError, RuntimeError, ValueError, sqlite3.Error) as error:
         parser.error(str(error))
 
-    print(f"Trained for {len(history)} epochs on {len(train_embeddings)} embeddings using {device}.")
-    print(f"Evaluation on {evaluated_queries} queries: precision@10={precision_at_k:.4f}, AP={average_precision:.4f}.")
+    print(f"Finished {len(trial_results)} trials on {len(train_embeddings)} training and {len(validation_embeddings)} validation embeddings using {device}.")
+    print("Top trials by validation precision@10, then AP:")
+    for rank, trial in enumerate(trial_results[:10], start=1):
+        print(f"{rank:>2}. trial={trial['trial']}, seed={trial['model_seed']}, epochs={trial['epochs']}, precision@10={trial['validation_precision_at_10']:.4f}, AP={trial['validation_average_precision']:.4f}")
     print(f"Stored {len(stored_codes)} learned binary codes in {bits_cache_path}.")
-    print(f"Saved hashing model to {model_path}.")
+    print(f"Saved best validation model to {model_path} and trial details to {manifest_path}.")
 
 
 if __name__ == "__main__":

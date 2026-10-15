@@ -3,7 +3,7 @@ from pathlib import Path
 
 from PIL import Image
 
-from dataset_reader import DEFAULT_CASIA_DIRECTORY, iter_casia_index, load_casia_record
+from lib.dataset_reader import DEFAULT_CASIA_DIRECTORY, iter_casia_index, load_casia_record
 
 def load_image(image_path):
     path = Path(image_path).expanduser().resolve()

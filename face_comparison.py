@@ -3,15 +3,15 @@ import logging
 from pathlib import Path
 import sqlite3
 
-from ArcFace import extract_arcface_embedding, load_arcface_model
-from caching import (
+from lib.ArcFace import extract_arcface_embedding, load_arcface_model
+from lib.caching import (
     cache_embeddings,
     dataset_signature,
     get_cached_embedding,
     initialize_embedding_cache,
 )
-from dataset_reader import DEFAULT_CASIA_DIRECTORY, load_casia_record
-from retrieval import find_record_offset, rank_casia_records
+from lib.dataset_reader import DEFAULT_CASIA_DIRECTORY, load_casia_record
+from lib.retrieval import find_record_offset, rank_casia_records
 
 
 DEFAULT_TOP_K = 10

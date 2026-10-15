@@ -5,7 +5,7 @@ import struct
 from PIL import Image
 
 
-DEFAULT_CASIA_DIRECTORY = Path(__file__).resolve().parent / "data" / "casia-webface"
+DEFAULT_CASIA_DIRECTORY = Path(__file__).resolve().parents[1] / "data" / "casia-webface"
 RECORDIO_MAGIC = 0xCED7230A
 RECORDIO_HEADER_FORMAT = "<IfQQ"
 RECORDIO_HEADER_SIZE = struct.calcsize(RECORDIO_HEADER_FORMAT)

@@ -3,7 +3,7 @@ import sqlite3
 
 import numpy as np
 
-from ArcFace import EMBEDDING_DIMENSION, MODEL_NAME
+from lib.ArcFace import EMBEDDING_DIMENSION, MODEL_NAME
 
 
 def dataset_signature(dataset_directory):

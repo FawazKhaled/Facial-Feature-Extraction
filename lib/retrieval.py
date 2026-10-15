@@ -3,9 +3,9 @@ import logging
 
 import numpy as np
 
-from ArcFace import extract_arcface_embedding
-from caching import cache_embeddings, get_cached_embedding
-from dataset_reader import iter_casia_index, load_casia_record
+from lib.ArcFace import extract_arcface_embedding
+from lib.caching import cache_embeddings, get_cached_embedding
+from lib.dataset_reader import iter_casia_index, load_casia_record
 
 
 CACHE_BATCH_SIZE = 512
