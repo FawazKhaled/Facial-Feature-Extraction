@@ -269,15 +269,3 @@ python .\image_input.py .\my-image.jpg --resize 224 224 --output .\resized.jpg
 ```
 
 Without an image path, it loads the first CASIA-WebFace record instead.
-
-## What isn't built yet
-
-- `binary_hashing.py` only searches with random-projection codes. The learned
-  codes are saved and scored by `compare_hashing.py`, but no command searches
-  with them for a single query yet.
-- The CASIA search commands take a record key as the query. You can't search
-  the dataset with your own photo yet.
-- Face ID has no liveness check, so a clear photo of a registered person on a
-  phone screen can fool it. Phone Face ID avoids this with a depth camera.
-- There's no command to list or delete registered people yet. Registering a
-  name again replaces their codes.
