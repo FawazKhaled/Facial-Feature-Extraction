@@ -22,13 +22,16 @@ Research/
   binary_hashing.py     Make random-projection codes and search with them
   hashing_cnn.py        Train the learned hashing model
   compare_hashing.py    Score every method on the same held-out test set
+  enroll_face.py        Set up Face ID for a person with the webcam
+  recognize_faces.py    Recognize enrolled people live from the webcam
   image_input.py        Load or resize a single image
   dataset_loader.py     List the files in a folder
   lib/
     ArcFace.py          Loads the ArcFace model and extracts embeddings
     caching.py          SQLite storage for embeddings and binary codes
     dataset_reader.py   Reads images from the CASIA-WebFace RecordIO files
-    hashing.py          Random projection and Hamming distance helpers
+    hashing.py          Random projection, ITQ, and Hamming distance helpers
+    face_id.py          Webcam, background face processing, and Face ID storage
     retrieval.py        Cosine similarity search over the dataset
   data/                 Dataset, caches, and trained models (not in git)
 ```
@@ -43,6 +46,20 @@ Install Python, then install the packages the scripts use:
 ```powershell
 python -m pip install numpy pillow insightface onnxruntime torch
 ```
+
+On Windows you can run the face models on the GPU instead, which makes live
+Face ID several times faster. Swap the regular ONNX Runtime for the DirectML
+build:
+
+```powershell
+python -m pip uninstall -y onnxruntime
+python -m pip install onnxruntime-directml==1.24.4
+```
+
+The scripts use the GPU automatically when DirectML is installed and fall back
+to the CPU otherwise. The codes come out the same either way. `pip check` will
+say InsightFace needs `onnxruntime`, but that's only a package name mismatch.
+The DirectML build provides the same `onnxruntime` module.
 
 Put the CASIA-WebFace RecordIO files in `data\casia-webface`. The folder
 should contain at least:
@@ -163,6 +180,67 @@ model was trained on. That's why the learned model can score a little above
 the float embeddings on average precision. A test on people the model has
 never seen would need a split by identity, which the project doesn't do yet.
 
+## Live Face ID with a webcam
+
+This works like setting up Face ID on a phone. First you register a person,
+then the live view puts their name on their face whenever they're in front of
+the camera. Faces it doesn't know are labeled "Unknown".
+
+Only bits are ever saved. The webcam frames and the float ArcFace embeddings
+stay in memory and are thrown away right after each frame is turned into a
+256-bit ITQ code. Face ID uses ITQ instead of the learned model because ITQ
+never learned any particular person. The learned model mostly memorized the 58
+people it was trained on, so it isn't a safe choice for brand new faces.
+
+### Register a person
+
+```powershell
+python .\enroll_face.py --name "Fawaz"
+```
+
+A window opens and walks you through five steps: look straight ahead, turn
+left, turn right, tilt up, and tilt down. It captures 3 codes per step (change
+this with `--samples-per-pose`) and only takes a picture when exactly one face
+is in view, close enough, and in the right pose. The bar at the bottom fills
+up as it goes. Press Q or Esc to cancel without saving anything.
+
+The codes are saved in `data\face_id.sqlite3`. Registering the same name
+again replaces that person's old codes but keeps their original place in line.
+The first time you run it, the script also fits ITQ on the cached CASIA
+embeddings and saves the settings in `data\itq_256.npz`, which takes about 20
+seconds.
+
+The same face can't be registered under two names. After every registration,
+and each time the live view starts, the script goes through everyone in the
+order they registered. If someone's codes mostly match a person who registered
+before them (at least half within a distance of 90), the later one is removed
+and the script tells you who it matched. In a test on 36 CASIA people, this
+caught every repeat registration and never confused two different people.
+
+### Run live recognition
+
+```powershell
+python .\recognize_faces.py
+```
+
+Each face gets a box with a name and its Hamming distance to the closest
+registered code. A distance of 90 or less counts as a match. Use
+`--max-distance` to make it stricter (lower) or more forgiving (higher). In a
+test on CASIA people that ITQ never saw, a limit of 90 let through about 2
+stranger pairs in every 100,000 and accepted 65% of single same-person pairs.
+Registering 15 codes per person makes it much more likely that at least one is
+close. Press Q or Esc to quit. Use `--camera 1` if you have more than one
+camera.
+
+Face processing takes about 50 ms per frame on the GPU with DirectML, or about
+a quarter of a second on the CPU. It runs in the background so the preview
+keeps playing at full speed either way. The
+boxes can lag a little behind fast movement. Each name only changes once most
+of that face's last 5 results agree, so a single blurry frame can't flip it.
+
+If `data\itq_256.npz` is deleted or replaced, the saved codes no longer line
+up with new ones. The live view will tell you to register everyone again.
+
 ## Load or resize an image
 
 `image_input.py` loads a regular image and can save a resized copy:
@@ -178,7 +256,9 @@ Without an image path, it loads the first CASIA-WebFace record instead.
 - `binary_hashing.py` only searches with random-projection codes. The learned
   codes are saved and scored by `compare_hashing.py`, but no command searches
   with them for a single query yet.
-- Searches take a CASIA record key as the query. You can't search with your
-  own photo yet.
-- There's no live webcam search, no way to register people, and no "unknown"
-  result when a match isn't reliable.
+- The CASIA search commands take a record key as the query. You can't search
+  the dataset with your own photo yet.
+- Face ID has no liveness check, so a clear photo of a registered person on a
+  phone screen can fool it. Phone Face ID avoids this with a depth camera.
+- There's no command to list or delete registered people yet. Registering a
+  name again replaces their codes.

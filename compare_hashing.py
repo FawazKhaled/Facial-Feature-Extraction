@@ -8,7 +8,7 @@ import torch
 
 from lib.caching import dataset_signature
 from lib.dataset_reader import DEFAULT_CASIA_DIRECTORY
-from lib.hashing import create_matrix, encode_embedding
+from lib.hashing import create_matrix, encode_embedding, encode_itq, train_itq
 from hashing_cnn import encode_hash, evaluate_binary_codes, load_hashing_model, split_cached_embeddings
 
 
@@ -38,34 +38,6 @@ def evaluate_float_embeddings(embeddings, labels, top_k=10):
     if not precisions:
         raise ValueError("Evaluation split has no identity with multiple samples.")
     return float(np.mean(precisions)), float(np.mean(average_precisions)), len(precisions)
-
-
-# iterative quantization (Gong & Lazebnik): PCA down to bit_length, then learn a rotation that reduces quantization error
-def train_itq(embeddings, bit_length=256, iterations=50, seed=42):
-    values = np.asarray(embeddings, dtype=np.float32)
-    if bit_length > values.shape[1]:
-        raise ValueError(f"ITQ needs bits <= embedding size ({values.shape[1]}), but got {bit_length}.")
-
-    mean = values.mean(axis=0)
-    centered = values - mean
-    _, _, components = np.linalg.svd(centered, full_matrices=False)
-    pca = components[:bit_length].T
-    projected = centered @ pca
-    rng = np.random.default_rng(seed)
-    rotation, _ = np.linalg.qr(rng.standard_normal((bit_length, bit_length)))
-
-    for _ in range(iterations):
-        codes = np.where(projected @ rotation >= 0, 1.0, -1.0)
-        left, _, right = np.linalg.svd(projected.T @ codes)
-        rotation = left @ right
-
-    return mean, (pca @ rotation).astype(np.float32)
-
-
-def encode_itq(embeddings, mean, projection):
-    codes = (np.asarray(embeddings, dtype=np.float32) - mean) @ projection >= 0
-    packed_codes = np.packbits(codes, axis=1, bitorder="little")
-    return [code.tobytes() for code in packed_codes]
 
 
 def main():
