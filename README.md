@@ -14,6 +14,25 @@ There are three ways to make the codes:
 - **Learned hashing model:** a small neural network trained on identity labels
   so that photos of the same person get similar codes.
 
+## Results
+
+| What was measured | Result |
+|---|---|
+| Search quality with ITQ codes (precision@10 / average precision) | 0.9517 / 0.9399 |
+| Search quality with the full float embeddings, no hashing | 0.9540 / 0.9440 |
+| Size of one face | 32 bytes as a code, 2,048 bytes as a float embedding |
+| Strangers accepted at a distance of 90 (CASIA people ITQ never saw) | about 2 in 100,000 pairs |
+| A registered face on the laptop webcam | usually 60 to 70 bits away, under the limit of 90 |
+| Duplicate registration check (36 CASIA people) | 36 of 36 repeats caught, 0 of 1,260 different pairs flagged |
+| Live Face ID speed on the Intel Arc GPU (DirectML) | about 52 ms per frame, roughly 19 updates a second |
+| Live Face ID speed on the CPU (3 threads) | about 180 to 270 ms per frame |
+| Live Face ID speed on the CPU before limiting threads | about 1,500 ms per frame |
+
+Search quality was measured on 1,973 held-out CASIA test images with 256-bit
+codes. ITQ ends up within 0.005 of the uncompressed embeddings on both scores
+while using 64 times less space. Step 4 has the full comparison of every
+hashing method, including the learned model.
+
 ## Project layout
 
 ```text
