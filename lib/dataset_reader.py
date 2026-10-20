@@ -70,3 +70,28 @@ def load_casia_record(dataset_directory, record_key, record_offset):
         raise ValueError(f"Could not decode CASIA record {record_key}: {error}") from error
 
     return image, float(label)
+
+
+# reads only the small header at the start of each record, so labels come out without decoding any images
+# flag 0 is a face image whose label is its identity; other flags are dataset bookkeeping records
+def iter_casia_labels(dataset_directory):
+    dataset_path = Path(dataset_directory).expanduser().resolve()
+    record_path = dataset_path / "train.rec"
+    if not record_path.is_file():
+        raise FileNotFoundError(f"CASIA-WebFace records not found: {record_path}")
+
+    with record_path.open("rb") as record_file:
+        for record_key, record_offset in iter_casia_index(dataset_path):
+            record_file.seek(record_offset)
+            header = record_file.read(RECORDIO_FRAMING_SIZE + RECORDIO_HEADER_SIZE)
+            if len(header) != RECORDIO_FRAMING_SIZE + RECORDIO_HEADER_SIZE:
+                raise ValueError(f"RecordIO header is incomplete at offset {record_offset}.")
+
+            magic, _ = struct.unpack(RECORDIO_FRAMING_FORMAT, header[:RECORDIO_FRAMING_SIZE])
+            if magic != RECORDIO_MAGIC:
+                raise ValueError(f"Invalid RecordIO signature at offset {record_offset}: 0x{magic:08x}.")
+            flag, label, embedded_key, _ = struct.unpack(RECORDIO_HEADER_FORMAT, header[RECORDIO_FRAMING_SIZE:])
+            if embedded_key != record_key:
+                raise ValueError(f"RecordIO index key {record_key} does not match record key {embedded_key}.")
+
+            yield record_key, flag, float(label)
