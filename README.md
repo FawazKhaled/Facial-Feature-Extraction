@@ -269,3 +269,12 @@ python .\image_input.py .\my-image.jpg --resize 224 224 --output .\resized.jpg
 ```
 
 Without an image path, it loads the first CASIA-WebFace record instead.
+
+## License
+
+The code in this repository is released under the [MIT License](LICENSE).
+
+That license only covers this project's code. The CASIA-WebFace dataset and
+InsightFace's pretrained ArcFace models (`buffalo_l`) come with their own terms,
+which generally allow non-commercial research use only. Neither is included in
+this repository.
